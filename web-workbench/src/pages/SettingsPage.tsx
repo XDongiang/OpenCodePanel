@@ -4,7 +4,7 @@ import * as XLSX from 'xlsx'
 import { useSettingsStore } from '../stores/settings-store'
 import { useAuthStore } from '../stores/auth-store'
 import { serverApi } from '../lib/api/server'
-import type { PersonEntry, PersonnelLevel, ReportLevel } from '../types'
+import type { PersonEntry, PersonnelLevel, ReportLevel, DigestConfig, PushPeriod } from '../types'
 import { PERSON_CATEGORIES } from '../types'
 import { DEPARTMENTS } from '../lib/departments'
 import { getClient } from '../lib/api/client'
@@ -150,7 +150,7 @@ export function SettingsPage() {
     { key: 'connection' as const, label: '服务连接' },
     { key: 'namelist' as const, label: '人员名单' },
     { key: 'xhs' as const, label: '小红书' },
-    ...(isAdmin ? [{ key: 'users' as const, label: '用户管理' }] : []),
+    ...(isAdmin ? [{ key: 'users' as const, label: '用户管理' }, { key: 'digests' as const, label: '定期汇总' }] : []),
   ]
 
   return (
@@ -220,6 +220,7 @@ export function SettingsPage() {
         )}
         {tab === 'xhs' && <XhsTab />}
         {tab === 'users' && isAdmin && <UsersTab />}
+        {tab === 'digests' && isAdmin && <DigestConfigTab />}
 
         {/* 数据备份(仅管理员) */}
         {isAdmin && (

@@ -151,6 +151,17 @@ describe('RBAC:人员名单', () => {
       expect(status).toBe(403)
     }
   })
+
+  it('bulk 批量导入(回归:bulk 路由不能被 :id 遮蔽)', async () => {
+    const result = await api('/api/personnel/bulk', {
+      method: 'POST',
+      token: adminToken,
+      body: { entries: [{ name: '批量甲' }, { name: '批量乙' }] },
+    })
+    expect(result.status).toBe(200)
+    const body = result.json as { added: number }
+    expect(body.added).toBe(2)
+  })
 })
 
 describe('RBAC:报告', () => {
@@ -179,6 +190,23 @@ describe('RBAC:报告', () => {
 
     const scoped = (await api('/api/reports', { token: collegeToken })).json as Array<{ id: string }>
     expect(scoped.map((r) => r.id)).toEqual(['r-1'])
+  })
+
+  it('概览统计:风险等级计数与院级范围隔离', async () => {
+    const adminSum = (await api('/api/reports/summary', { token: adminToken })).json as {
+      total: number; byRisk: { low: number; medium: number; high: number }; last7: { date: string; count: number }[]
+    }
+    expect(adminSum.total).toBe(3)
+    // riskLevel 缺省记为中风险
+    expect(adminSum.byRisk.medium).toBe(3)
+    expect(adminSum.byRisk.high).toBe(0)
+    // 近 7 天包含今天,且今天的报告数是 0(报告创建于 beforeAll 的当天之外无法断言;仅验证结构)
+    expect(adminSum.last7.length).toBe(7)
+    expect(adminSum.last7[6].date).toBe(new Date().toISOString().slice(0, 10))
+
+    // 院级只统计本院报告(r-1 一条)
+    const collegeSum = (await api('/api/reports/summary', { token: collegeToken })).json as { total: number }
+    expect(collegeSum.total).toBe(1)
   })
 
   it('院级只能创建本学院报告,跨学院被拒', async () => {

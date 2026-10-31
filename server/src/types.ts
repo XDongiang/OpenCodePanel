@@ -36,6 +36,20 @@ export const REPORT_LEVELS: readonly ReportLevel[] = [
   'individual',
 ]
 
+/** 报告综合风险等级:预警分类与处置优先级依据。 */
+export type ReportRiskLevel = 'low' | 'medium' | 'high'
+
+export const RISK_LEVELS: readonly ReportRiskLevel[] = ['low', 'medium', 'high']
+
+/** 舆情概览统计(趋势与预警面板)。 */
+export interface ReportSummary {
+  total: number
+  byRisk: Record<ReportRiskLevel, number>
+  byLevel: Record<ReportLevel, number>
+  last7: { date: string; count: number }[]
+  byDept: { dept: string; count: number; highestRisk: ReportRiskLevel | undefined }[]
+}
+
 export interface PersonEntry {
   id: string
   name: string
@@ -65,4 +79,5 @@ export interface SavedReport {
   threadId?: string
   level: ReportLevel
   personName?: string
+  riskLevel?: ReportRiskLevel
 }

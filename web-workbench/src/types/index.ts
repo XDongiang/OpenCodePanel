@@ -165,6 +165,15 @@ export interface AppSettings {
 export type PersonnelLevel = 'school' | 'college' | 'department' | 'class' | 'course' | 'individual'
 export type ReportLevel = 'school' | 'college' | 'department' | 'class' | 'course' | 'individual'
 
+/** 舆情概览统计(趋势与预警面板)。 */
+export interface ReportSummary {
+  total: number
+  byRisk: Record<'low' | 'medium' | 'high', number>
+  byLevel: Record<ReportLevel, number>
+  last7: { date: string; count: number }[]
+  byDept: { dept: string; count: number; highestRisk: 'low' | 'medium' | 'high' | undefined }[]
+}
+
 export const PERSON_CATEGORIES = [
   '校领导',
   '职能部门负责人',
@@ -201,4 +210,131 @@ export interface PersonnelDB {
   version: number
   updatedAt: string               // ISO timestamp
   entries: PersonEntry[]
+}
+
+// ── 就业指导(招聘岗位)──
+export type JobStatus = 'active' | 'expired'
+
+export const JOB_CATEGORIES = [
+  '大型互联网企业',
+  '国有企业',
+  '事业单位',
+  '公务员及选调生',
+  '教师编制岗位',
+  '科研院所',
+  '高校行政及科研岗位',
+  '医疗教育AI等重点行业',
+  '其他',
+] as const
+
+export type JobCategory = (typeof JOB_CATEGORIES)[number]
+
+export interface JobPosting {
+  id: string
+  company: string                 // 单位名称
+  position: string                // 招聘岗位
+  major?: string                  // 招聘专业
+  degree?: string                 // 学历要求
+  location?: string               // 工作地点
+  headcount?: string              // 招聘人数
+  salary?: string                 // 薪资待遇
+  applyStart?: string             // 报名时间
+  deadline?: string               // 截止时间
+  url?: string                    // 招聘公告链接
+  contact?: string                // 联系方式
+  source: string                  // 信息来源
+  publishedAt?: string            // 发布时间
+  status: JobStatus               // active / expired(失效识别)
+  college?: string                // 面向学院(可选)
+  tags?: string[]
+  category?: JobCategory          // 重点岗位分类(导入/新建时自动推断)
+  notes?: string
+  createdAt: string
+  updatedAt: string
+}
+
+// ── 科研助理(模块三)──
+export type PushPeriod = 'daily' | 'weekly' | 'monthly'
+
+export interface LiteratureHit {
+  title: string
+  authors: string[]
+  year?: string
+  journal?: string
+  doi?: string
+  url?: string
+  abstract?: string
+  source: string
+  type?: string
+}
+
+export interface PaperRecord {
+  id: string
+  title: string
+  authors: string[]
+  year?: string
+  journal?: string
+  doi?: string
+  url?: string
+  abstract?: string
+  type?: string
+  field?: string
+  source: string
+  notes?: string
+  collectedBy: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface FundProject {
+  id: string
+  name: string
+  leader?: string
+  institution?: string
+  code?: string
+  year?: string
+  number?: string
+  amount?: string
+  category?: string
+  status?: string
+  abstract?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface PushSubscription {
+  id: string
+  name: string
+  keywords: string[]
+  journal?: string
+  period: PushPeriod
+  email?: string
+  enabled: boolean
+  createdBy: string
+  createdAt: string
+  updatedAt: string
+}
+
+// ── 消息中心 ──
+export interface AppNotification {
+  id: string
+  type: 'push' | 'digest' | 'system'
+  title: string
+  body?: string
+  link?: string
+  username: string | null
+  createdAt: string
+  readBy: string[]
+}
+
+// ── 舆情/就业定期汇总配置 ──
+export interface DigestConfig {
+  id: string
+  type: 'report' | 'job'
+  period: PushPeriod
+  email?: string
+  enabled: boolean
+  createdBy: string
+  createdAt: string
+  updatedAt: string
 }

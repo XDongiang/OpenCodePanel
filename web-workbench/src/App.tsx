@@ -6,6 +6,8 @@ import { HistoryPage } from './pages/HistoryPage'
 import { MonitorPage } from './pages/MonitorPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { KnowledgePage } from './pages/KnowledgePage'
+import { JobsPage } from './pages/JobsPage'
+import { ResearchPage } from './pages/ResearchPage'
 import { LoginPage } from './pages/LoginPage'
 import { useAuthStore } from './stores/auth-store'
 import { setUnauthorizedHandler } from './lib/api/server'
@@ -57,6 +59,8 @@ export function App() {
                 <Route path="/history" element={<HistoryPage />} />
                 <Route path="/monitor" element={<MonitorPage />} />
                 <Route path="/kb" element={<KnowledgePage />} />
+                <Route path="/jobs" element={<JobsPage />} />
+                <Route path="/research" element={<ResearchPage />} />
                 <Route path="/settings" element={<SettingsPage />} />
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>

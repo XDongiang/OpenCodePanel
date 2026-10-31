@@ -1,4 +1,4 @@
-import type { PersonEntry, PersonnelLevel, ReportLevel } from '../../types'
+import type { AppNotification, DigestConfig, FundProject, JobCategory, JobPosting, JobStatus, LiteratureHit, PaperRecord, PersonEntry, PersonnelLevel, PushPeriod, PushSubscription, ReportLevel, ReportSummary } from '../../types'
 
 /**
  * 华师 AI Server API 客户端。
@@ -43,6 +43,20 @@ export interface ServerReport {
   threadId?: string
   level: ReportLevel
   personName?: string
+  riskLevel?: 'low' | 'medium' | 'high'
+}
+
+export interface PushLogEntry {
+  id: string
+  subscriptionId: string
+  name: string
+  email?: string
+  period: 'daily' | 'weekly' | 'monthly'
+  generatedAt: string
+  count: number
+  digest: string
+  status: 'generated' | 'sent' | 'failed'
+  error?: string
 }
 
 export interface SendMailPayload {
@@ -181,6 +195,10 @@ class ServerApi {
     return this.request('/api/reports', { method: 'PUT', body: JSON.stringify({ reports }) })
   }
 
+  listReportSummary(): Promise<ReportSummary> {
+    return this.request('/api/reports/summary')
+  }
+
   // ── Knowledge Base ──
   listKbDocuments(): Promise<KbDocumentMeta[]> {
     return this.request('/api/kb/documents')
@@ -194,12 +212,179 @@ class ServerApi {
     return this.request(`/api/kb/documents/${encodeURIComponent(id)}`, { method: 'DELETE' })
   }
 
+  getKbDocument(id: string): Promise<KbDocumentMeta & { content: string }> {
+    return this.request(`/api/kb/documents/${encodeURIComponent(id)}`)
+  }
+
   kbSearch(q: string): Promise<KbSearchResult> {
     return this.request(`/api/kb/search?q=${encodeURIComponent(q)}`)
   }
 
   kbAsk(question: string): Promise<KbAskResponse> {
     return this.request('/api/kb/ask', { method: 'POST', body: JSON.stringify({ question }) })
+  }
+
+  // ── 就业指导 ──
+  listJobs(params?: { q?: string; degree?: string; location?: string; status?: JobStatus; college?: string; category?: JobCategory }): Promise<JobPosting[]> {
+    const qs = new URLSearchParams()
+    if (params?.q) qs.set('q', params.q)
+    if (params?.degree) qs.set('degree', params.degree)
+    if (params?.location) qs.set('location', params.location)
+    if (params?.status) qs.set('status', params.status)
+    if (params?.college) qs.set('college', params.college)
+    if (params?.category) qs.set('category', params.category)
+    const s = qs.toString()
+    return this.request('/api/jobs' + (s ? '?' + s : ''))
+  }
+
+  createJob(input: Omit<JobPosting, 'id' | 'createdAt' | 'updatedAt'>): Promise<JobPosting> {
+    return this.request('/api/jobs', { method: 'POST', body: JSON.stringify(input) })
+  }
+
+  updateJob(id: string, patch: Partial<JobPosting>): Promise<JobPosting> {
+    return this.request('/api/jobs/' + encodeURIComponent(id), { method: 'PATCH', body: JSON.stringify(patch) })
+  }
+
+  deleteJob(id: string): Promise<{ ok: boolean }> {
+    return this.request('/api/jobs/' + encodeURIComponent(id), { method: 'DELETE' })
+  }
+
+  bulkJobs(entries: JobPosting[]): Promise<{ ok: boolean; added: number; entries: JobPosting[] }> {
+    return this.request('/api/jobs/bulk', { method: 'POST', body: JSON.stringify({ entries }) })
+  }
+
+  // ── 科研助理 ──
+  researchSearch(input: { q: string; author?: string; journal?: string; fromYear?: string; toYear?: string; type?: 'journal' | 'conference' | 'thesis' | 'review'; maxResults?: number }): Promise<{ ok: boolean; hits: LiteratureHit[]; count: number }> {
+    return this.request('/api/research/search', { method: 'POST', body: JSON.stringify(input) })
+  }
+
+  /** 基于检索命中文献生成「研究背景与国内外现状」综述(runtime AI)。 */
+  summarizeLiterature(input: { question: string; hits: LiteratureHit[] }): Promise<{ ok: boolean; answer: string; threadId: string; cited: number }> {
+    return this.request('/api/research/summarize-literature', { method: 'POST', body: JSON.stringify(input) })
+  }
+
+  listPapers(params?: { q?: string; field?: string; type?: string; year?: string; journal?: string }): Promise<PaperRecord[]> {
+    const qs = new URLSearchParams()
+    if (params?.q) qs.set('q', params.q)
+    if (params?.field) qs.set('field', params.field)
+    if (params?.type) qs.set('type', params.type)
+    if (params?.year) qs.set('year', params.year)
+    if (params?.journal) qs.set('journal', params.journal)
+    const s = qs.toString()
+    return this.request('/api/research/papers' + (s ? '?' + s : ''))
+  }
+
+  savePaper(input: Omit<PaperRecord, 'id' | 'createdAt' | 'updatedAt' | 'collectedBy'>): Promise<PaperRecord> {
+    return this.request('/api/research/papers', { method: 'POST', body: JSON.stringify(input) })
+  }
+
+  importPapers(entries: Array<Omit<PaperRecord, 'id' | 'createdAt' | 'updatedAt' | 'collectedBy'>>): Promise<{ ok: boolean; added: number; entries: PaperRecord[] }> {
+    return this.request('/api/research/papers/import', { method: 'POST', body: JSON.stringify({ entries }) })
+  }
+
+  deletePaper(id: string): Promise<{ ok: boolean }> {
+    return this.request('/api/research/papers/' + encodeURIComponent(id), { method: 'DELETE' })
+  }
+
+  listFunds(params?: { q?: string; year?: string; category?: string; status?: string }): Promise<FundProject[]> {
+    const qs = new URLSearchParams()
+    if (params?.q) qs.set('q', params.q)
+    if (params?.year) qs.set('year', params.year)
+    if (params?.category) qs.set('category', params.category)
+    if (params?.status) qs.set('status', params.status)
+    const s = qs.toString()
+    return this.request('/api/research/funds' + (s ? '?' + s : ''))
+  }
+
+  createFund(input: Omit<FundProject, 'id' | 'createdAt' | 'updatedAt'>): Promise<FundProject> {
+    return this.request('/api/research/funds', { method: 'POST', body: JSON.stringify(input) })
+  }
+
+  updateFund(id: string, patch: Partial<FundProject>): Promise<FundProject> {
+    return this.request('/api/research/funds/' + encodeURIComponent(id), { method: 'PATCH', body: JSON.stringify(patch) })
+  }
+
+  deleteFund(id: string): Promise<{ ok: boolean }> {
+    return this.request('/api/research/funds/' + encodeURIComponent(id), { method: 'DELETE' })
+  }
+
+  importFunds(entries: Array<Omit<FundProject, 'id' | 'createdAt' | 'updatedAt'>>): Promise<{ ok: boolean; added: number; entries: FundProject[] }> {
+    return this.request('/api/research/funds/import', { method: 'POST', body: JSON.stringify({ entries }) })
+  }
+
+  analyzeFunds(question: string): Promise<{ ok: boolean; answer: string; threadId: string; projectCount: number }> {
+    return this.request('/api/research/funds/analyze', { method: 'POST', body: JSON.stringify({ question }) })
+  }
+
+  listSubscriptions(): Promise<PushSubscription[]> {
+    return this.request('/api/research/subscriptions')
+  }
+
+  createSubscription(input: Omit<PushSubscription, 'id' | 'createdAt' | 'updatedAt' | 'createdBy'>): Promise<PushSubscription> {
+    return this.request('/api/research/subscriptions', { method: 'POST', body: JSON.stringify(input) })
+  }
+
+  updateSubscription(id: string, patch: Partial<PushSubscription>): Promise<PushSubscription> {
+    return this.request('/api/research/subscriptions/' + encodeURIComponent(id), { method: 'PATCH', body: JSON.stringify(patch) })
+  }
+
+  deleteSubscription(id: string): Promise<{ ok: boolean }> {
+    return this.request('/api/research/subscriptions/' + encodeURIComponent(id), { method: 'DELETE' })
+  }
+
+  researchPush(subscriptionId: string): Promise<{ ok: boolean; digest: string; count: number; subscription: PushSubscription }> {
+    return this.request('/api/research/push', { method: 'POST', body: JSON.stringify({ subscriptionId }) })
+  }
+
+  // ── 知识库增强 ──
+  ocrKb(dataBase64: string, filename: string, lang?: string): Promise<{ ok: boolean; filename: string; text: string; pages: number }> {
+    return this.request('/api/kb/ocr', { method: 'POST', body: JSON.stringify({ dataBase64, filename, lang }) })
+  }
+
+  reviewKb(scope?: 'school' | 'college', college?: string): Promise<{ ok: boolean; answer: string; threadId: string; docCount: number; docs: Array<{ filename: string; scope: string; college?: string }> }> {
+    return this.request('/api/kb/review', { method: 'POST', body: JSON.stringify({ scope, college }) })
+  }
+
+  listPushLogs(): Promise<PushLogEntry[]> {
+    return this.request('/api/research/push-logs')
+  }
+
+  // ── 消息中心 ──
+  listNotifications(limit = 20): Promise<AppNotification[]> {
+    return this.request('/api/notifications?limit=' + limit)
+  }
+
+  notificationUnreadCount(): Promise<{ count: number }> {
+    return this.request('/api/notifications/unread-count')
+  }
+
+  markNotificationRead(id: string): Promise<{ ok: boolean }> {
+    return this.request('/api/notifications/' + encodeURIComponent(id) + '/read', { method: 'POST' })
+  }
+
+  clearNotifications(): Promise<{ ok: boolean }> {
+    return this.request('/api/notifications', { method: 'DELETE' })
+  }
+
+  // ── 舆情/就业定期汇总配置(admin) ──
+  listDigests(): Promise<DigestConfig[]> {
+    return this.request('/api/digests')
+  }
+
+  createDigest(input: { type: 'report' | 'job'; period: PushPeriod; email?: string; enabled?: boolean }): Promise<DigestConfig> {
+    return this.request('/api/digests', { method: 'POST', body: JSON.stringify(input) })
+  }
+
+  updateDigest(id: string, patch: Partial<DigestConfig>): Promise<DigestConfig> {
+    return this.request('/api/digests/' + encodeURIComponent(id), { method: 'PATCH', body: JSON.stringify(patch) })
+  }
+
+  deleteDigest(id: string): Promise<{ ok: boolean }> {
+    return this.request('/api/digests/' + encodeURIComponent(id), { method: 'DELETE' })
+  }
+
+  runDigest(id: string): Promise<{ ok: boolean; digest: string; mail?: string; error?: string }> {
+    return this.request('/api/digests/' + encodeURIComponent(id) + '/run', { method: 'POST' })
   }
 
   // ── Mail ──

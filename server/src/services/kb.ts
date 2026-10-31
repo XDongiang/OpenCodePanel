@@ -198,6 +198,18 @@ export class KbService {
     return this.read().entries.find((d) => d.id === id) ?? null
   }
 
+  /**
+   * 按角色返回文档全文(供下载):admin/school 全量;college 仅学校级或本院学院级。
+   * 不可见返回 null,文件不存在也返回 null(统一 404)。
+   */
+  getScoped(id: string, scope?: KbScopeFilter): StoredKbDoc | null {
+    const doc = this.getMeta(id)
+    if (!doc) return null
+    if (doc.scope === 'school') return doc
+    if (!scope || scope.role === 'admin' || scope.role === 'school') return doc
+    return doc.college === (scope.college ?? '') ? doc : null
+  }
+
   add(input: { filename: string; college?: string; scope: KbScope; text: string; uploadedBy: string }): KbDocumentMeta {
     const filename = input.filename.trim()
     const text = input.text.trim()
@@ -232,6 +244,29 @@ export class KbService {
     if (next.length === doc.entries.length) return false
     this.save(next)
     return true
+  }
+
+  /** 制度审查素材:可见文档的元数据 + 每文档前若干字符(控制上下文长度)。 */
+  reviewMaterials(
+    filter?: { scope?: KbScope; college?: string },
+    maxDocs = 30,
+    maxCharsPerDoc = 1500
+  ): Array<{ filename: string; scope: KbScope; college?: string; charCount: number; preview: string }> {
+    return this.read().entries
+      .filter((d) => {
+        if (!filter) return true
+        if (filter.scope && d.scope !== filter.scope) return false
+        if (filter.scope === 'college' && filter.college && d.college !== filter.college) return false
+        return true
+      })
+      .slice(0, maxDocs)
+      .map((d) => ({
+        filename: d.filename,
+        scope: d.scope,
+        college: d.college,
+        charCount: d.charCount,
+        preview: d.chunks.join('').slice(0, maxCharsPerDoc),
+      }))
   }
 
   /**

@@ -8,7 +8,7 @@ import { buildMonitorPrompt } from '../lib/monitor-prompt'
 import { DEPARTMENTS } from '../lib/departments'
 import { useSettingsStore } from '../stores/settings-store'
 import { useAuthStore } from '../stores/auth-store'
-import type { ReportLevel } from '../types'
+import type { ReportLevel, ReportSummary } from '../types'
 
 const REPORT_LEVELS: { key: ReportLevel; label: string; desc: string }[] = [
   { key: 'school', label: '全校', desc: '汇总全部学院' },
@@ -53,6 +53,12 @@ interface PendingMail {
   expiresIn?: number
 }
 
+const RISK_BADGE: Record<'low' | 'medium' | 'high', { bg: string; text: string; label: string }> = {
+  low: { bg: 'bg-emerald-50', text: 'text-emerald-600', label: '低风险' },
+  medium: { bg: 'bg-amber-50', text: 'text-amber-600', label: '中风险' },
+  high: { bg: 'bg-red-50', text: 'text-red-500', label: '高风险' },
+}
+
 const LEVEL_BADGE: Record<ReportLevel, { bg: string; text: string; label: string }> = {
   school: { bg: 'bg-purple-50', text: 'text-purple-600', label: '校级' },
   college: { bg: 'bg-blue-500/10', text: 'text-blue-600', label: '学院' },
@@ -82,6 +88,8 @@ export function MonitorPage() {
   const [deptScope, setDeptScope] = useState('')     // department/major name
   const [classScope, setClassScope] = useState('')    // class name
   const [courseScope, setCourseScope] = useState('')  // course name
+  const [riskLevel, setRiskLevel] = useState<'low' | 'medium' | 'high'>('medium')
+  const [keyTopics, setKeyTopics] = useState('')
   const [running, setRunning] = useState(false)
   const [report, setReport] = useState('')
   const [error, setError] = useState('')
@@ -89,6 +97,7 @@ export function MonitorPage() {
   const runIdRef = useRef(0)
   const [savedReports, setSavedReports] = useState<SavedReport[]>([])
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [summary, setSummary] = useState<ReportSummary | null>(null)
   const [recipientEmail, setRecipientEmail] = useState(loadReportMail)
   const [mailStatus, setMailStatus] = useState('')
   const [mailError, setMailError] = useState('')
@@ -103,12 +112,15 @@ export function MonitorPage() {
     }
   }, [isCollege, myCollege])
 
-  // 报告以服务端为准,进入页面时加载
+  // 报告与概览统计以服务端为准,进入页面时加载
   useEffect(() => {
     setServerToken(settings.authToken)
     serverApi.listReports()
       .then(setSavedReports)
       .catch((err) => setError(err instanceof Error ? err.message : '加载报告失败'))
+    serverApi.listReportSummary()
+      .then(setSummary)
+      .catch(() => { /* 概览统计失败不影响页面主体 */ })
   }, [settings.authToken])
 
   // Computed values
@@ -158,6 +170,7 @@ export function MonitorPage() {
     const body = [
       subject,
       `生成时间：${new Date(reportToSend.createdAt).toLocaleString('zh-CN')}`,
+      reportToSend.riskLevel ? `风险等级：${RISK_BADGE[reportToSend.riskLevel].label}` : '',
       '',
       reportToSend.content,
     ].join('\n')
@@ -248,6 +261,7 @@ export function MonitorPage() {
         level: reportLevel,
         scope,
         timeRange,
+        keyTopics,
         personnel: {
           version: 1,
           updatedAt: new Date().toISOString(),
@@ -284,6 +298,7 @@ export function MonitorPage() {
               threadId: thread.id,
               level: reportLevel,
               personName: reportLevel === 'individual' ? selectedPerson?.name : undefined,
+              riskLevel,
             }
             persistReport(newReport)
             return
@@ -308,6 +323,7 @@ export function MonitorPage() {
             content: text, createdAt: new Date().toISOString(), threadId: thread.id,
             level: reportLevel,
             personName: reportLevel === 'individual' ? selectedPerson?.name : undefined,
+            riskLevel,
           }
           persistReport(newReport)
         } else {
@@ -325,7 +341,7 @@ export function MonitorPage() {
         runningRef.current = false
       }
     }
-  }, [reportLevel, targetDept, timeRange, settings, selectedPersonId, selectedPerson, persistReport])
+  }, [reportLevel, targetDept, timeRange, settings, selectedPersonId, selectedPerson, keyTopics, riskLevel, persistReport])
 
   const handleStop = () => {
     runIdRef.current += 1
@@ -506,6 +522,42 @@ export function MonitorPage() {
             className="rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-2 text-sm font-medium text-white hover:from-blue-500 hover:to-indigo-500 disabled:opacity-50 transition-all shadow-lg shadow-blue-600/10">
             {running ? '监控中...' : '🔍 开始监控'}
           </button>
+
+        {/* 重点事项 + 风险等级(可编辑填空区域 + 人工判定) */}
+        <div className="mt-3 w-full grid grid-cols-1 gap-3 md:grid-cols-2">
+          <div>
+            <label className="mb-1.5 block text-xs text-slate-500">重点事项(可编辑,逗号分隔,可选)</label>
+            <textarea
+              value={keyTopics}
+              onChange={(e) => setKeyTopics(e.target.value)}
+              placeholder="如:招生政策变动, 校园安全事件, 师德师风投诉"
+              rows={1}
+              disabled={running}
+              className="w-full resize-none rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-800 placeholder-slate-400 focus:border-blue-500 focus:outline-none disabled:opacity-50"
+            />
+            <p className="mt-1 text-xs text-slate-500">填入后将随监控指令下发,逐项检查并汇报结果</p>
+          </div>
+          <div>
+            <label className="mb-1.5 block text-xs text-slate-500">风险等级(人工确认,供预警分类与处置优先级)</label>
+            <div className="flex gap-1">
+              {([['low', '低风险'], ['medium', '中风险'], ['high', '高风险']] as const).map(([v, label]) => (
+                <button
+                  key={v}
+                  onClick={() => setRiskLevel(v)}
+                  disabled={running}
+                  className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50 ${
+                    riskLevel === v
+                      ? v === 'high' ? 'bg-red-500 text-white' : v === 'medium' ? 'bg-amber-500 text-white' : 'bg-emerald-500 text-white'
+                      : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <p className="mt-1 text-xs text-slate-500">AI 报告末尾会给出【风险等级与预警】建议,此处由你圈定最终等级</p>
+          </div>
+        </div>
           {running && (
             <button onClick={handleStop}
               className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-400 hover:bg-red-500/20 transition-colors">停止</button>
@@ -578,6 +630,67 @@ export function MonitorPage() {
           </div>
         )}
 
+        {/* 舆情概览:趋势与风险预警 */}
+        {summary && summary.total > 0 && (
+          <div className="mb-4 rounded-xl border border-slate-200 bg-white p-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-medium text-slate-600">📊 舆情概览与风险预警</h3>
+              <span className="text-xs text-slate-400">近 7 天趋势 · 按 {isCollege ? '本院' : '全部'} 范围统计</span>
+            </div>
+            <div className="mt-3 grid grid-cols-4 gap-2">
+              {[
+                { label: '报告总数', value: summary.total, cls: 'text-slate-800' },
+                { label: '高风险', value: summary.byRisk.high, cls: 'text-red-500' },
+                { label: '中风险', value: summary.byRisk.medium, cls: 'text-amber-500' },
+                { label: '低风险', value: summary.byRisk.low, cls: 'text-emerald-500' },
+              ].map((s) => (
+                <div key={s.label} className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-center">
+                  <p className={'text-xl font-semibold ' + s.cls}>{s.value}</p>
+                  <p className="mt-0.5 text-xs text-slate-500">{s.label}</p>
+                </div>
+              ))}
+            </div>
+            <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+              <div>
+                <p className="mb-1.5 text-xs font-medium text-slate-500">近 7 天报告量</p>
+                <div className="flex items-end gap-1.5">
+                  {summary.last7.map((d) => {
+                    const max = Math.max(1, ...summary.last7.map((x) => x.count))
+                    return (
+                      <div key={d.date} className="flex flex-1 flex-col items-center gap-0.5">
+                        <span className="text-[10px] text-slate-500">{d.count || ''}</span>
+                        <div
+                          className={'w-full rounded-t ' + (d.count > 0 ? 'bg-blue-500' : 'bg-slate-100')}
+                          style={{ height: Math.max(4, Math.round((d.count / max) * 32)) + 'px' }}
+                        />
+                        <span className="text-[10px] text-slate-400">{d.date.slice(5)}</span>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+              <div>
+                <p className="mb-1.5 text-xs font-medium text-slate-500">院系报告量 Top</p>
+                <ul className="space-y-1">
+                  {summary.byDept.slice(0, 5).map((d) => (
+                    <li key={d.dept} className="flex items-center justify-between text-xs">
+                      <span className="truncate text-slate-600">{d.dept}</span>
+                      <span className="ml-2 flex shrink-0 items-center gap-1.5">
+                        {d.highestRisk && (
+                          <span className={'rounded-full px-1.5 py-0.5 text-[10px] font-medium ' + RISK_BADGE[d.highestRisk].bg + ' ' + RISK_BADGE[d.highestRisk].text}>
+                            {RISK_BADGE[d.highestRisk].label}
+                          </span>
+                        )}
+                        <span className="font-medium text-slate-700">{d.count}</span>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Current report (just generated) */}
         {report && !running && !expandedId && (
           <div className="rounded-xl border border-slate-200 bg-white p-5 mb-4">
@@ -604,6 +717,11 @@ export function MonitorPage() {
                       <span className={`inline-block rounded-md border px-1.5 py-0.5 text-xs font-medium ${badge.bg} ${badge.text} border-current/20`}>
                         {badge.label}
                       </span>
+                      {r.riskLevel && (
+                        <span className={`inline-block rounded-md border px-1.5 py-0.5 text-xs font-medium ${RISK_BADGE[r.riskLevel].bg} ${RISK_BADGE[r.riskLevel].text} border-current/20`}>
+                          {RISK_BADGE[r.riskLevel].label}
+                        </span>
+                      )}
                       <div>
                         <p className="text-sm text-slate-600 font-medium truncate">
                           {r.dept}

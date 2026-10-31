@@ -3,10 +3,13 @@ import type { UserRole } from './users.js'
 import {
   PERSONNEL_LEVELS,
   REPORT_LEVELS,
+  RISK_LEVELS,
   type PersonEntry,
   type PersonnelDB,
   type PersonnelLevel,
   type ReportLevel,
+  type ReportRiskLevel,
+  type ReportSummary,
   type SavedReport,
 } from '../types.js'
 
@@ -38,6 +41,12 @@ function normalizeReportLevel(value: unknown, fallback: ReportLevel): ReportLeve
   return typeof value === 'string' && (REPORT_LEVELS as readonly string[]).includes(value)
     ? (value as ReportLevel)
     : fallback
+}
+
+function normalizeRiskLevel(value: unknown): ReportRiskLevel | undefined {
+  return typeof value === 'string' && (RISK_LEVELS as readonly string[]).includes(value)
+    ? (value as ReportRiskLevel)
+    : undefined
 }
 
 /**
@@ -247,6 +256,7 @@ export class ReportsService {
       threadId: asString(input.threadId),
       level: normalizeReportLevel(input.level, 'college'),
       personName: asString(input.personName),
+      riskLevel: normalizeRiskLevel(input.riskLevel),
     }
     const next = [report, ...this.list()].slice(0, MAX_REPORTS)
     this.storage.writeDoc(REPORTS_DOC, next)
@@ -274,6 +284,56 @@ export class ReportsService {
     return this.remove(id)
   }
 
+  /**
+   * 舆情概览统计(趋势/风险预警面板数据源):
+   * - total/byRisk:风险等级计数(low/medium/high)
+   * - byLevel:各层级报告计数;last7:近 7 天每日报告数
+   * - byDept:报告量 Top 8 的院系(含最高风险等级),其余并入「其他」
+   * 范围与 listScoped 一致(admin/school 全量,college 仅本院)。
+   */
+  summary(scope?: { role: UserRole; college?: string }): ReportSummary {
+    const reports = this.listScoped(scope)
+    const total = reports.length
+
+    const byRisk: Record<ReportRiskLevel, number> = { low: 0, medium: 0, high: 0 }
+    const byLevel: Record<ReportLevel, number> = {
+      school: 0, college: 0, department: 0, class: 0, course: 0, individual: 0,
+    }
+    const deptCount = new Map<string, { count: number; highest: ReportRiskLevel | undefined }>()
+
+    const today = new Date()
+    const last7: { date: string; count: number }[] = []
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(today)
+      d.setDate(today.getDate() - i)
+      last7.push({ date: d.toISOString().slice(0, 10), count: 0 })
+    }
+
+    for (const r of reports) {
+      const risk = r.riskLevel ?? 'medium'
+      byRisk[risk] += 1
+      byLevel[r.level] = (byLevel[r.level] ?? 0) + 1
+      const dept = r.dept || '未标注'
+      const cur = deptCount.get(dept) ?? { count: 0, highest: undefined }
+      cur.count += 1
+      if (risk === 'high') cur.highest = 'high'
+      else if (risk === 'medium' && cur.highest !== 'high') cur.highest = 'medium'
+      else if (cur.highest === undefined) cur.highest = 'low'
+      deptCount.set(dept, cur)
+
+      const day = r.createdAt.slice(0, 10)
+      const slot = last7.find((x) => x.date === day)
+      if (slot) slot.count += 1
+    }
+
+    const sorted = [...deptCount.entries()].sort((a, b) => b[1].count - a[1].count)
+    const top = sorted.slice(0, 8).map(([dept, v]) => ({ dept, count: v.count, highestRisk: v.highest }))
+    const rest = sorted.slice(8).reduce((acc, [, v]) => acc + v.count, 0)
+    if (rest > 0) top.push({ dept: '其他', count: rest, highestRisk: undefined })
+
+    return { total, byRisk, byLevel, last7, byDept: top }
+  }
+
   /** 整表替换(备份还原)。非法记录丢弃,保留传入 id。 */
   replace(inputReports: unknown[]): SavedReport[] {
     const normalized: SavedReport[] = []
@@ -291,6 +351,7 @@ export class ReportsService {
         threadId: asString(input.threadId),
         level: normalizeReportLevel(input.level, 'college'),
         personName: asString(input.personName),
+        riskLevel: normalizeRiskLevel(input.riskLevel),
       })
     }
     const next = normalized.slice(0, MAX_REPORTS)

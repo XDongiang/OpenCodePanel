@@ -35,8 +35,12 @@ async function extractPdf(file: File): Promise<string> {
         .map((item) => ('str' in item ? item.str : ''))
         .join(' ')
         .trim()
-      if (line) parts.push(line)
-      parts.push('\n')
+      if (line) {
+        // 页码标记:问答可据此引用"第 N 页",与 OCR 输出格式一致
+        parts.push('〔第 ' + pageNo + ' 页〕 ')
+        parts.push(line)
+        parts.push('\n')
+      }
       page.cleanup()
     }
   } finally {

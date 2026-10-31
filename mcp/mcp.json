@@ -6,11 +6,11 @@
   },
   "servers": {
     "weibo": {
-      "command": "/home/sean/miniforge3/envs/test/bin/mcp-server-weibo",
+      "command": "mcp-server-weibo",
       "args": [],
       "env": {},
       "disabled": false,
-      "comment": "微博热搜/搜索/用户动态。无需登录，偶尔 409 重试即可"
+      "comment": "微博热搜/搜索/用户动态。无需登录，偶尔 409 重试即可。command 依赖 PATH(安装后即用)，部署时确保 .venv/bin 在前"
     },
     "agent-reach": {
       "command": "agent-reach",

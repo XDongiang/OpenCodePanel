@@ -28,6 +28,8 @@ export interface ServerConfig {
   sessionTtlMs: number
   /** 知识库问答使用的模型 */
   kbModel: string
+  /** 论文定时推送检查间隔(毫秒);0 或未设置则不启用调度(测试用) */
+  pushCheckIntervalMs?: number
 }
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
@@ -53,6 +55,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     adminPassword: env.ADMIN_PASSWORD && env.ADMIN_PASSWORD !== '' ? env.ADMIN_PASSWORD : null,
     sessionTtlMs: Number.isFinite(ttlDays) && ttlDays > 0 ? ttlDays * 24 * 60 * 60 * 1000 : 30 * 24 * 60 * 60 * 1000,
     kbModel: envStr(env, 'KB_MODEL', 'deepseek-v4-pro'),
+    pushCheckIntervalMs: Number.parseInt(envStr(env, 'PUSH_CHECK_INTERVAL_MS', '900000'), 10) || undefined,
   }
 }
 
